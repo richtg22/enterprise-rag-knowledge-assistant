@@ -1,14 +1,15 @@
 # Enterprise RAG Knowledge Assistant
 
-A full-stack Retrieval-Augmented Generation (RAG) application that enables users to upload multiple PDF documents and ask grounded questions using semantic search and LLM-powered responses with source citations.
+A full-stack Retrieval-Augmented Generation (RAG) application that enables users to upload multiple PDF documents and ask grounded questions using semantic search, conversational memory, and LLM-powered responses with source citations.
 
 ## Features
 
 * Multi-document PDF upload and indexing
 * Semantic search using vector embeddings
-* RAG-based question answering
+* Retrieval-Augmented Generation (RAG) based question answering
 * Source citations with page references
-* Conversational chat history
+* Conversational memory for multi-turn document interactions
+* Chat history with timestamps
 * Knowledge base management (clear and re-index documents)
 * Upload statistics and document tracking
 * Custom enterprise prompt for grounded responses
@@ -32,7 +33,19 @@ A full-stack Retrieval-Augmented Generation (RAG) application that enables users
 
 ## Architecture
 
-User → React Frontend → FastAPI Backend → LangChain → ChromaDB → Groq LLM
+```text
+User
+  ↓
+React Frontend
+  ↓
+FastAPI Backend
+  ↓
+LangChain Retrieval Pipeline
+  ↓
+ChromaDB Vector Store
+  ↓
+Groq LLM
+```
 
 ## Local Setup
 
@@ -52,21 +65,40 @@ npm install
 npm run dev
 ```
 
-## Current Features
+## Implemented Features
 
 * Multi-PDF Upload
 * Semantic Document Retrieval
 * Source Citations
 * Chat History
+* Conversational Memory
 * Knowledge Base Management
 * Enterprise Prompting
+* Multi-turn Question Answering
+
+## Example Conversation
+
+**User:** What is this document about?
+
+**Assistant:** The document provides a project status update and outlines the next phase plan.
+
+**User:** What are the next steps?
+
+**Assistant:** Based on the project update, the next steps include final testing, scalability validation, and a review meeting with stakeholders.
+
+**User:** Who is responsible?
+
+**Assistant:** The project team is responsible for mitigating risks and completing validation activities.
 
 ## Future Enhancements
 
-* Conversational Memory
 * JWT Authentication
-* PostgreSQL Integration
+* PostgreSQL Chat Persistence
 * Docker Support
-* Cloud Deployment
+* Cloud Deployment (Vercel + Render)
 * User-Specific Knowledge Bases
+* Advanced LangChain Memory
 
+## Screenshots
+
+Screenshots and deployment links will be added soon.

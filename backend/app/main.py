@@ -1,15 +1,14 @@
 import os
 import shutil
+import gc
+
 from fastapi import FastAPI, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from app.config import UPLOAD_DIR, CHROMA_DB_PATH
 from app.document_loader import load_and_split_pdf
 from app.rag import create_vector_store, get_qa_chain
-
-from fastapi.middleware.cors import CORSMiddleware
-import shutil
-import os
 
 app = FastAPI(title="Enterprise RAG Knowledge Assistant")
 
@@ -17,12 +16,16 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",
-        "http://127.0.0.1:5173"
+        "http://127.0.0.1:5173",
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+chat_history = []
+MAX_HISTORY = 5
+
 
 class QuestionRequest(BaseModel):
     question: str
@@ -35,21 +38,17 @@ def health_check():
 
 @app.post("/upload")
 async def upload_document(files: list[UploadFile] = File(...)):
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-    all_documents=[]
+    all_documents = []
 
     for file in files:
-        file_path=os.path.join(
-            UPLOAD_DIR,
-            file.filename
-        )
+        file_path = os.path.join(UPLOAD_DIR, file.filename)
 
         with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(
-                file.file,
-                buffer
-            )
-        docs=load_and_split_pdf(file_path)
+            shutil.copyfileobj(file.file, buffer)
+
+        docs = load_and_split_pdf(file_path)
         all_documents.extend(docs)
 
     create_vector_store(all_documents)
@@ -57,45 +56,81 @@ async def upload_document(files: list[UploadFile] = File(...)):
     return {
         "message": "Documents uploaded successfully",
         "documents": len(files),
-        "chunks": len(all_documents)
+        "chunks": len(all_documents),
     }
 
 
 @app.post("/ask")
 def ask_question(request: QuestionRequest):
     qa_chain = get_qa_chain()
-    response = qa_chain.invoke({"query": request.question})
+
+    contextual_question = request.question
+
+    if chat_history:
+        recent_history = chat_history[-MAX_HISTORY:]
+
+        history_text = ""
+
+        for interaction in recent_history:
+            history_text += f"""
+Previous Question:
+{interaction["question"]}
+
+Previous Answer:
+{interaction["answer"]}
+
+"""
+
+        contextual_question = f"""
+Conversation History:
+{history_text}
+
+Current Question:
+{request.question}
+"""
+
+    response = qa_chain.invoke({"query": contextual_question})
 
     sources = []
     seen = set()
-    
+
     for doc in response["source_documents"]:
-        source = os.path.basename(
-            doc.metadata.get("source", "")
-        )
-        
+        source = os.path.basename(doc.metadata.get("source", ""))
         page = doc.metadata.get("page", 0) + 1
-        
+
         key = (source, page)
-        
+
         if key not in seen:
             seen.add(key)
-            
-            sources.append({
-                "source": source,
-                "page": page
-            })
+
+            sources.append(
+                {
+                    "source": source,
+                    "page": page,
+                }
+            )
+
+    chat_history.append(
+        {
+            "question": request.question,
+            "answer": response["result"],
+        }
+    )
+
+    if len(chat_history) > MAX_HISTORY:
+        chat_history.pop(0)
 
     return {
         "answer": response["result"],
-        "sources": sources
+        "sources": sources,
     }
+
 
 @app.delete("/clear")
 def clear_knowledge_base():
-    import gc
-
     gc.collect()
+
+    chat_history.clear()
 
     if os.path.exists(CHROMA_DB_PATH):
         try:
