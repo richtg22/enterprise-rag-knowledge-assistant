@@ -1,0 +1,18 @@
+# Backend
+backend/venv/
+backend/.env
+backend/uploads/
+backend/chroma_db/
+backend/__pycache__/
+*.pyc
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# System
+.DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/
