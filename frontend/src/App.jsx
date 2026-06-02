@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import axios from "axios";
 import "./App.css";
+import AuthPage from "./components/AuthPage";
 
 const API_BASE_URL = "http://127.0.0.1:8000";
 
@@ -12,10 +13,17 @@ function App() {
   const [documents, setDocuments] = useState(0);
   const [chunks, setChunks] = useState(0);
   const [documentsLoaded, setDocumentsLoaded] = useState(false);
+  const [token, setToken] = useState(localStorage.getItem("token"));
 
   const fileInputRef = useRef(null);
 
+  if (!token) {
+    return <AuthPage setToken={setToken} />;
+  }
+
   const uploadDocument = async () => {
+    const token=localStorage.getItem("token");
+
     if (!file || file.length === 0) {
       alert("Please select at least one PDF.");
       return;
@@ -30,7 +38,13 @@ function App() {
     setLoading(true);
 
     try {
-      const response = await axios.post(`${API_BASE_URL}/upload`, formData);
+      const response = await axios.post(`${API_BASE_URL}/upload`, formData,
+        {
+          headers:{
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
 
       setDocuments(response.data.documents);
       setChunks(response.data.chunks);
@@ -54,7 +68,13 @@ function App() {
     try {
       const response = await axios.post(`${API_BASE_URL}/ask`, {
         question,
-      });
+      },
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    }
+  );
 
       const newChat = {
         question,
@@ -73,36 +93,47 @@ function App() {
     }
   };
 
-  const clearKnowledgeBase = async () => {
+  const clearKnowledgeBase = async () => {    
     setLoading(true);
-
+    
     try {
-      await axios.delete(`${API_BASE_URL}/clear`);
-
+      await axios.delete(`${API_BASE_URL}/clear`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      
       setFile(null);
       setQuestion("");
       setDocuments(0);
       setChunks(0);
       setDocumentsLoaded(false);
       setChatHistory([]);
-
+      
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
-
+      
       alert("Knowledge base cleared successfully.");
     } catch (error) {
       console.error(error);
-      alert("Failed to clear knowledge base.");
+      alert(error.response?.data?.detail || "Failed to clear knowledge base.");
     } finally {
       setLoading(false);
     }
   };
 
+  const logout = () => {
+    localStorage.removeItem("token");
+    setToken(null);
+  };
+
   return (
     <div className="container">
       <h1>Enterprise RAG Knowledge Assistant</h1>
-
+      <button onClick={logout}>
+        Logout
+      </button>
       <p>
         Upload enterprise documents and ask grounded questions with source
         citations.
