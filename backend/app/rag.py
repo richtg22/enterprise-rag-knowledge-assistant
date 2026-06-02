@@ -23,7 +23,7 @@ def get_qa_chain():
         embedding_function=embedding_model
     )
 
-    retriever = vector_store.as_retriever(search_kwargs={"k": 3})
+    retriever = vector_store.as_retriever(search_kwargs={"k": 5})
 
     llm = ChatGroq(
         groq_api_key=GROQ_API_KEY,
@@ -34,14 +34,22 @@ def get_qa_chain():
     prompt_template = """
     You are an enterprise knowledge assistant.
     
-    Use only the context provided below to answer the user's question.
+    Use ONLY the information provided in the context.
     
-    If the answer is not available in the context, say:
+    When the user asks for:
+    - a summary
+    - what the document is about
+    - what the document says
+    
+    provide a concise but complete summary of the retrieved content.
+    
+    Do not say "the context appears to be".
+    
+    Answer confidently using the retrieved information.
+    
+    If the answer is not contained in the context, respond:
+    
     "I could not find that information in the uploaded documents."
-    
-    Do not make assumptions.
-    Do not invent details.
-    Keep the answer concise and professional.
     
     Context:
     {context}

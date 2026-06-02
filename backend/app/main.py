@@ -32,7 +32,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-chat_history = []
+chat_histories = {}
 MAX_HISTORY = 5
 
 
@@ -148,10 +148,17 @@ def ask_question(
 ):
     qa_chain = get_qa_chain()
 
+    user_email = current_user["email"]
+
+    if user_email not in chat_histories:
+        chat_histories[user_email] = []
+
+    user_chat_history = chat_histories[user_email]
+
     contextual_question = request.question
 
-    if chat_history:
-        recent_history = chat_history[-MAX_HISTORY:]
+    if user_chat_history:
+        recent_history = user_chat_history[-MAX_HISTORY:]
         history_text = ""
 
         for interaction in recent_history:
@@ -192,20 +199,20 @@ Current Question:
                 }
             )
 
-    chat_history.append(
+    user_chat_history.append(
         {
             "question": request.question,
             "answer": response["result"],
         }
     )
 
-    if len(chat_history) > MAX_HISTORY:
-        chat_history.pop(0)
+    if len(user_chat_history) > MAX_HISTORY:
+        user_chat_history.pop(0)
 
     return {
         "answer": response["result"],
         "sources": sources,
-        "user": current_user["email"],
+        "user": user_email,
     }
 
 
@@ -213,8 +220,15 @@ Current Question:
 def clear_knowledge_base(
     current_user: dict = Depends(get_current_user),
 ):
+    import gc
+
     gc.collect()
-    chat_history.clear()
+
+    user_email = current_user["email"]
+
+    # Clear only this user's conversation memory
+    if user_email in chat_histories:
+        chat_histories[user_email].clear()
 
     if os.path.exists(CHROMA_DB_PATH):
         try:
@@ -222,8 +236,10 @@ def clear_knowledge_base(
         except PermissionError:
             return {
                 "message": (
-                    "ChromaDB is currently in use. Please stop the backend "
-                    "server, manually delete chroma_db folder, then restart."
+                    "ChromaDB is currently in use. "
+                    "Please stop the backend server, "
+                    "manually delete chroma_db folder, "
+                    "then restart."
                 )
             }
 
@@ -234,5 +250,5 @@ def clear_knowledge_base(
 
     return {
         "message": "Knowledge base cleared successfully",
-        "user": current_user["email"],
+        "user": user_email,
     }
