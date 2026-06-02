@@ -14,6 +14,9 @@ A full-stack Retrieval-Augmented Generation (RAG) application that enables users
 * Upload statistics and document tracking
 * Custom enterprise prompt for grounded responses
 * React frontend and FastAPI backend architecture
+* User registration and login
+* JWT-based authentication
+* Protected document upload, question answering and knowledge base clearing
 
 ## Tech Stack
 
