@@ -3,7 +3,8 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-
+from app.database import SessionLocal
+from app.models import User
 
 SECRET_KEY = "replace-this-with-a-secure-secret-key"
 ALGORITHM = "HS256"
@@ -11,9 +12,6 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
-
-
-fake_users_db = {}
 
 
 def hash_password(password: str):
@@ -53,7 +51,14 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
     except JWTError:
         raise credentials_exception
 
-    user = fake_users_db.get(email)
+    db = SessionLocal()
+
+    try:
+        user=(
+            db.query(User).filter(User.email==email).first()
+        )
+    finally:
+        db.close
 
     if user is None:
         raise credentials_exception
