@@ -72,6 +72,7 @@ npm run dev
 
 ```bash
 docker compose up --build
+```
 
 ## Implemented Features
 
