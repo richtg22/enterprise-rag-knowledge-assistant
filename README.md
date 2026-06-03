@@ -68,6 +68,12 @@ npm install
 npm run dev
 ```
 
+## Run with Docker
+
+```bash
+docker compose up --build
+
+
 ## Implemented Features
 
 * Multi-PDF Upload
@@ -78,6 +84,7 @@ npm run dev
 * Knowledge Base Management
 * Enterprise Prompting
 * Multi-turn Question Answering
+* Dockerized frontend/backend
 
 ## Example Conversation
 
