@@ -73,7 +73,6 @@ npm run dev
 ```bash
 docker compose up --build
 
-
 ## Implemented Features
 
 * Multi-PDF Upload
