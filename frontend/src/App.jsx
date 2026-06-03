@@ -103,12 +103,7 @@ function App() {
         },
       });
       
-      setFile(null);
-      setQuestion("");
-      setDocuments(0);
-      setChunks(0);
-      setDocumentsLoaded(false);
-      setChatHistory([]);
+      resetDashboardState();
       
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
@@ -125,7 +120,21 @@ function App() {
 
   const logout = () => {
     localStorage.removeItem("token");
+    resetDashboardState();
     setToken(null);
+  };
+
+  const resetDashboardState = () => {
+    setFile(null);
+    setQuestion("");
+    setChatHistory([]);
+    setDocuments(0);
+    setChunks(0);
+    setDocumentsLoaded(false);
+    
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
   };
 
   return (
