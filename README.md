@@ -68,7 +68,7 @@ npm install
 npm run dev
 ```
 
-## Run with Docker
+### Run with Docker
 
 ```bash
 docker compose up --build
