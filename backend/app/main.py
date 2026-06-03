@@ -21,7 +21,9 @@ from app.models import ChatHistory, User
 from app.rag import create_vector_store, get_qa_chain
 
 
-app = FastAPI(title="Enterprise RAG Knowledge Assistant")
+app = FastAPI(
+    title="Enterprise RAG Knowledge Assistant"
+)
 
 Base.metadata.create_all(bind=engine)
 
@@ -51,7 +53,9 @@ class UserRegister(BaseModel):
 
 @app.get("/")
 def health_check():
-    return {"message": "Enterprise RAG Assistant API is running"}
+    return {
+        "message": "Enterprise RAG Assistant API is running"
+    }
 
 
 @app.post("/register")
@@ -87,7 +91,9 @@ def register_user(
     db.commit()
     db.refresh(db_user)
 
-    return {"message": "User registered successfully"}
+    return {
+        "message": "User registered successfully"
+    }
 
 
 @app.post("/login")
@@ -116,13 +122,18 @@ def login_user(
             detail="Invalid email or password",
         )
 
-    if not verify_password(password, existing_user.password):
+    if not verify_password(
+        password,
+        existing_user.password
+    ):
         raise HTTPException(
             status_code=401,
             detail="Invalid email or password",
         )
 
-    token = create_access_token(data={"sub": existing_user.email})
+    token = create_access_token(
+        data={"sub": existing_user.email}
+    )
 
     return {
         "access_token": token,
@@ -155,7 +166,10 @@ async def upload_document(
         )
 
         with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+            shutil.copyfileobj(
+                file.file,
+                buffer
+            )
 
         docs = load_and_split_pdf(file_path)
         all_documents.extend(docs)
@@ -209,18 +223,24 @@ Current Question:
 {request.question}
 """
 
-    response = qa_chain.invoke({"query": contextual_question})
+    response = qa_chain.invoke(
+        {"query": contextual_question}
+    )
 
     sources = []
     seen = set()
 
     for doc in response["source_documents"]:
-        source = os.path.basename(doc.metadata.get("source", ""))
+        source = os.path.basename(
+            doc.metadata.get("source", "")
+        )
+
         page = doc.metadata.get("page", 0) + 1
         key = (source, page)
 
         if key not in seen:
             seen.add(key)
+
             sources.append(
                 {
                     "source": source,

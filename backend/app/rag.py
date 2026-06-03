@@ -1,15 +1,24 @@
 import os
 
+from langchain.chains import RetrievalQA
+from langchain.prompts import PromptTemplate
 from langchain_chroma import Chroma
 from langchain_community.embeddings import FastEmbedEmbeddings
 from langchain_groq import ChatGroq
-from langchain.chains import RetrievalQA
-from langchain.prompts import PromptTemplate
 
 from app.config import CHROMA_DB_PATH, GROQ_API_KEY
 
 
-embedding_model = FastEmbedEmbeddings()
+_embedding_model = None
+
+
+def get_embedding_model():
+    global _embedding_model
+
+    if _embedding_model is None:
+        _embedding_model = FastEmbedEmbeddings()
+
+    return _embedding_model
 
 
 def get_user_chroma_path(user_id: int):
@@ -23,7 +32,7 @@ def create_vector_store(documents, user_id: int):
 
     vector_store = Chroma.from_documents(
         documents=documents,
-        embedding=embedding_model,
+        embedding=get_embedding_model(),
         persist_directory=user_chroma_path,
     )
 
@@ -35,7 +44,7 @@ def get_qa_chain(user_id: int):
 
     vector_store = Chroma(
         persist_directory=user_chroma_path,
-        embedding_function=embedding_model,
+        embedding_function=get_embedding_model(),
     )
 
     retriever = vector_store.as_retriever(
