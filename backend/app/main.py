@@ -17,7 +17,7 @@ from app.auth import (
 from app.config import CHROMA_DB_PATH, UPLOAD_DIR
 from app.database import Base, engine, get_db
 from app.document_loader import load_and_split_pdf
-from app.models import ChatHistory, User
+from app.models import ChatHistory, User, Base
 from app.rag import create_vector_store, get_qa_chain
 
 

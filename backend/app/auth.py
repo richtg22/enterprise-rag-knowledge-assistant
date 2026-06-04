@@ -8,7 +8,8 @@ from passlib.context import CryptContext
 
 from app.database import SessionLocal
 from app.models import User
-
+from dotenv import load_dotenv
+load_dotenv()
 
 SECRET_KEY = os.getenv("SECRET_KEY")
 
