@@ -19,7 +19,7 @@ from app.database import Base, engine, get_db
 from app.document_loader import load_and_split_pdf
 from app.models import ChatHistory, User, Document, Conversation
 from app.rag import create_vector_store, get_qa_chain, delete_document_vectors
-
+from app.storage import upload_file_to_supabase, delete_file_from_supabase
 
 app = FastAPI(title="Enterprise RAG Knowledge Assistant")
 
@@ -121,22 +121,38 @@ async def upload_document(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    user_upload_dir = os.path.join(UPLOAD_DIR, f"user_{current_user.id}")
+    user_upload_dir = os.path.join(
+        UPLOAD_DIR,
+        f"user_{current_user.id}",
+    )
+
     os.makedirs(user_upload_dir, exist_ok=True)
 
     all_documents = []
 
     for file in files:
-        file_path = os.path.join(user_upload_dir, file.filename)
+        file_path = os.path.join(
+            user_upload_dir,
+            file.filename,
+        )
 
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
+
+        storage_path = upload_file_to_supabase(
+            current_user.id,
+            file.filename,
+            file_path,
+        )
+
+        print("UPLOADED TO:", storage_path)
 
         docs = load_and_split_pdf(file_path)
 
         for doc in docs:
             doc.metadata["filename"] = file.filename
             doc.metadata["user_id"] = current_user.id
+            doc.metadata["storage_path"] = storage_path
 
         all_documents.extend(docs)
 
@@ -157,7 +173,10 @@ async def upload_document(
                 )
             )
 
-    create_vector_store(all_documents, current_user.id)
+    create_vector_store(
+        all_documents,
+        current_user.id,
+    )
 
     db.commit()
 
@@ -190,7 +209,6 @@ def get_documents(
         for document in documents
     ]
 
-
 @app.delete("/documents/{document_id}")
 def delete_document(
     document_id: int,
@@ -207,15 +225,30 @@ def delete_document(
     )
 
     if not document:
-        raise HTTPException(status_code=404, detail="Document not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Document not found",
+        )
 
     deleted_vectors = delete_document_vectors(
         current_user.id,
         document.filename,
     )
 
-    user_upload_dir = os.path.join(UPLOAD_DIR, f"user_{current_user.id}")
-    file_path = os.path.join(user_upload_dir, document.filename)
+    delete_file_from_supabase(
+        current_user.id,
+        document.filename,
+    )
+
+    user_upload_dir = os.path.join(
+        UPLOAD_DIR,
+        f"user_{current_user.id}",
+    )
+
+    file_path = os.path.join(
+        user_upload_dir,
+        document.filename,
+    )
 
     if os.path.exists(file_path):
         os.remove(file_path)
@@ -227,7 +260,6 @@ def delete_document(
         "message": "Document deleted successfully",
         "deleted_vectors": deleted_vectors,
     }
-
 
 @app.post("/conversations")
 def create_conversation(

@@ -3,6 +3,7 @@ import axios from "axios";
 import "./App.css";
 
 const API_BASE_URL = "https://enterprise-rag-knowledge-assistant.onrender.com";
+// const API_BASE_URL = "http://127.0.0.1:8000";
 
 function App() {
   const [isLogin, setIsLogin] = useState(true);
