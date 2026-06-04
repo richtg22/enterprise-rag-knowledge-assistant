@@ -99,3 +99,26 @@ Answer:
     )
 
     return qa_chain
+
+def delete_document_vectors(user_id: int, filename: str):
+    user_chroma_path = get_user_chroma_path(user_id)
+
+    vector_store = Chroma(
+        persist_directory=user_chroma_path,
+        embedding_function=get_embedding_model(),
+    )
+
+    collection = vector_store._collection
+
+    results = collection.get(
+        where={
+            "filename": filename
+        }
+    )
+
+    ids = results.get("ids", [])
+
+    if ids:
+        collection.delete(ids=ids)
+
+    return len(ids)

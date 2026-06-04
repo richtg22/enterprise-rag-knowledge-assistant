@@ -18,7 +18,7 @@ from app.config import CHROMA_DB_PATH, UPLOAD_DIR
 from app.database import Base, engine, get_db
 from app.document_loader import load_and_split_pdf
 from app.models import ChatHistory, User, Document
-from app.rag import create_vector_store, get_qa_chain
+from app.rag import create_vector_store, get_qa_chain, delete_document_vectors
 
 
 app = FastAPI(title="Enterprise RAG Knowledge Assistant")
@@ -163,6 +163,11 @@ async def upload_document(
             shutil.copyfileobj(file.file, buffer)
 
         docs = load_and_split_pdf(file_path)
+
+        for doc in docs:
+            doc.metadata["filename"] = file.filename
+            doc.metadata["user_id"] = current_user.id
+
         all_documents.extend(docs)
 
         existing_document = (
@@ -238,6 +243,11 @@ def delete_document(
             status_code=404,
             detail="Document not found",
         )
+    
+    deleted_vectors = delete_document_vectors(
+        current_user.id,
+        document.filename,
+    )
 
     user_upload_dir = os.path.join(
         UPLOAD_DIR,
@@ -255,7 +265,9 @@ def delete_document(
     db.delete(document)
     db.commit()
 
-    return {"message": "Document deleted successfully"}
+    return {"message": "Document deleted successfully",
+            "deleted_vectors": deleted_vectors,
+            }
 
 
 @app.post("/ask")
