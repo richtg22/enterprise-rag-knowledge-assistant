@@ -1,59 +1,211 @@
-import { useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import axios from "axios";
 import "./App.css";
-import AuthPage from "./components/AuthPage";
 
 const API_BASE_URL = "https://enterprise-rag-knowledge-assistant.onrender.com";
 
 function App() {
-  const [file, setFile] = useState(null);
-  const [question, setQuestion] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [chatHistory, setChatHistory] = useState([]);
-  const [documents, setDocuments] = useState(0);
-  const [chunks, setChunks] = useState(0);
-  const [documentsLoaded, setDocumentsLoaded] = useState(false);
+  const [isLogin, setIsLogin] = useState(true);
+  const [user, setUser] = useState(null);
   const [token, setToken] = useState(localStorage.getItem("token"));
 
-  const fileInputRef = useRef(null);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
 
-  if (!token) {
-    return <AuthPage setToken={setToken} />;
-  }
+  const [files, setFiles] = useState([]);
+  const [documents, setDocuments] = useState([]);
+  const [documentsLoaded, setDocumentsLoaded] = useState(false);
 
-  const uploadDocument = async () => {
-    const token=localStorage.getItem("token");
+  const [question, setQuestion] = useState("");
+  const [chatHistory, setChatHistory] = useState([]);
 
-    if (!file || file.length === 0) {
-      alert("Please select at least one PDF.");
-      return;
+  const [loading, setLoading] = useState(false);
+  const [uploadMessage, setUploadMessage] = useState("");
+
+  useEffect(() => {
+    const savedUser = localStorage.getItem("user");
+
+    if (savedUser && token) {
+      setUser(JSON.parse(savedUser));
+      loadDocuments();
     }
+  }, [token]);
 
-    const formData = new FormData();
+  const authHeaders = () => ({
+    headers: {
+      Authorization: `Bearer ${localStorage.getItem("token")}`,
+    },
+  });
 
-    for (let i = 0; i < file.length; i++) {
-      formData.append("files", file[i]);
-    }
-
-    setLoading(true);
-
+  const handleRegister = async () => {
     try {
-      const response = await axios.post(`${API_BASE_URL}/upload`, formData,
+      await axios.post(`${API_BASE_URL}/register`, {
+        name,
+        email,
+        password,
+      });
+
+      alert("Registration successful. Please login.");
+      setIsLogin(true);
+    } catch (error) {
+      console.error(error);
+      alert(error.response?.data?.detail || "Registration failed");
+    }
+  };
+
+  const handleLogin = async () => {
+    try {
+      const formData = new URLSearchParams();
+      formData.append("username", email);
+      formData.append("password", password);
+
+      const response = await axios.post(
+        `${API_BASE_URL}/login`,
+        formData,
         {
-          headers:{
-            Authorization: `Bearer ${token}`,
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
           },
         }
       );
 
-      setDocuments(response.data.documents);
-      setChunks(response.data.chunks);
+      localStorage.setItem("token", response.data.access_token);
+      localStorage.setItem("user", JSON.stringify(response.data.user));
+
+      setToken(response.data.access_token);
+      setUser(response.data.user);
+
+      setEmail("");
+      setPassword("");
+
+      await loadDocuments();
+    } catch (error) {
+      console.error(error);
+      alert(error.response?.data?.detail || "Login failed");
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+
+    setToken(null);
+    setUser(null);
+    setFiles([]);
+    setDocuments([]);
+    setDocumentsLoaded(false);
+    setChatHistory([]);
+    setUploadMessage("");
+  };
+
+  const handleFileChange = (event) => {
+    setFiles(Array.from(event.target.files));
+  };
+
+  const uploadDocuments = async () => {
+    if (files.length === 0) {
+      alert("Please select at least one PDF file.");
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const formData = new FormData();
+
+      files.forEach((file) => {
+        formData.append("files", file);
+      });
+
+      const response = await axios.post(
+        `${API_BASE_URL}/upload`,
+        formData,
+        {
+          ...authHeaders(),
+          headers: {
+            ...authHeaders().headers,
+            "Content-Type": "multipart/form-data",
+          },
+        }
+      );
+
       setDocumentsLoaded(true);
+      setUploadMessage(
+        `✓ ${response.data.documents} document(s) uploaded successfully\n✓ ${response.data.chunks} chunks indexed`
+      );
+
+      await loadDocuments();
     } catch (error) {
       console.error(error);
       alert(error.response?.data?.detail || "Upload failed.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadDocuments = async () => {
+    try {
+      const response = await axios.get(
+        `${API_BASE_URL}/documents`,
+        authHeaders()
+      );
+
+      setDocuments(response.data);
+
+      if (response.data.length > 0) {
+        setDocumentsLoaded(true);
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const deleteDocument = async (documentId) => {
+    const confirmDelete = window.confirm(
+      "Are you sure you want to delete this document?"
+    );
+
+    if (!confirmDelete) return;
+
+    try {
+      await axios.delete(
+        `${API_BASE_URL}/documents/${documentId}`,
+        authHeaders()
+      );
+
+      await loadDocuments();
+
+      alert("Document deleted successfully.");
+    } catch (error) {
+      console.error(error);
+      alert(error.response?.data?.detail || "Failed to delete document.");
+    }
+  };
+
+  const clearKnowledgeBase = async () => {
+    const confirmClear = window.confirm(
+      "Are you sure you want to clear your full knowledge base?"
+    );
+
+    if (!confirmClear) return;
+
+    try {
+      await axios.delete(
+        `${API_BASE_URL}/clear`,
+        authHeaders()
+      );
+
+      setFiles([]);
+      setDocuments([]);
+      setDocumentsLoaded(false);
+      setChatHistory([]);
+      setUploadMessage("");
+
+      alert("Knowledge base cleared successfully.");
+    } catch (error) {
+      console.error(error);
+      alert(error.response?.data?.detail || "Failed to clear knowledge base.");
     }
   };
 
@@ -63,18 +215,16 @@ function App() {
       return;
     }
 
-    setLoading(true);
-
     try {
-      const response = await axios.post(`${API_BASE_URL}/ask`, {
-        question,
-      },
-    {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    }
-  );
+      setLoading(true);
+
+      const response = await axios.post(
+        `${API_BASE_URL}/ask`,
+        {
+          question,
+        },
+        authHeaders()
+      );
 
       const newChat = {
         question,
@@ -83,66 +233,71 @@ function App() {
         timestamp: new Date().toLocaleTimeString(),
       };
 
-      setChatHistory((prev) => [...prev, newChat]);
+      setChatHistory((previous) => [...previous, newChat]);
       setQuestion("");
     } catch (error) {
       console.error(error);
-      alert("Question failed.");
+      alert(error.response?.data?.detail || "Failed to get answer.");
     } finally {
       setLoading(false);
     }
   };
 
-  const clearKnowledgeBase = async () => {    
-    setLoading(true);
-    
-    try {
-      await axios.delete(`${API_BASE_URL}/clear`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      
-      resetDashboardState();
-      
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
-      
-      alert("Knowledge base cleared successfully.");
-    } catch (error) {
-      console.error(error);
-      alert(error.response?.data?.detail || "Failed to clear knowledge base.");
-    } finally {
-      setLoading(false);
-    }
-  };
+  if (!user) {
+    return (
+      <div className="app">
+        <h1>Enterprise RAG Knowledge Assistant</h1>
 
-  const logout = () => {
-    localStorage.removeItem("token");
-    resetDashboardState();
-    setToken(null);
-  };
+        <section className="card auth-card">
+          <h2>{isLogin ? "Login" : "Register"}</h2>
 
-  const resetDashboardState = () => {
-    setFile(null);
-    setQuestion("");
-    setChatHistory([]);
-    setDocuments(0);
-    setChunks(0);
-    setDocumentsLoaded(false);
-    
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-  };
+          {!isLogin && (
+            <input
+              type="text"
+              placeholder="Name"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+            />
+          )}
+
+          <input
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+          />
+
+          <input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+          />
+
+          <button onClick={isLogin ? handleLogin : handleRegister}>
+            {isLogin ? "Login" : "Register"}
+          </button>
+
+          <p>
+            {isLogin
+              ? "Don't have an account?"
+              : "Already have an account?"}
+          </p>
+
+          <button onClick={() => setIsLogin(!isLogin)}>
+            Switch
+          </button>
+        </section>
+      </div>
+    );
+  }
 
   return (
-    <div className="container">
+    <div className="app">
       <h1>Enterprise RAG Knowledge Assistant</h1>
-      <button onClick={logout}>
-        Logout
-      </button>
+
+      <button onClick={handleLogout}>Logout</button>
+
       <p>
         Upload enterprise documents and ask grounded questions with source
         citations.
@@ -152,40 +307,49 @@ function App() {
         <h2>Upload Document</h2>
 
         <input
-          ref={fileInputRef}
           type="file"
           multiple
           accept="application/pdf"
-          onChange={(e) => setFile(e.target.files)}
+          onChange={handleFileChange}
         />
 
-        {file && (
-          <div className="selected-files">
-            <p>
-              <strong>Selected Files ({file.length})</strong>
-            </p>
-
-            {Array.from(file).map((f, index) => (
-              <div key={index}>• {f.name}</div>
+        {files.length > 0 && (
+          <div>
+            <h3>Selected Files ({files.length})</h3>
+            {files.map((file, index) => (
+              <p key={index}>• {file.name}</p>
             ))}
           </div>
         )}
 
-        <div className="button-group">
-          <button onClick={uploadDocument} disabled={loading}>
-            {loading ? "Indexing..." : "Upload & Index"}
-          </button>
+        <button onClick={uploadDocuments} disabled={loading}>
+          {loading ? "Uploading..." : "Upload & Index"}
+        </button>
 
-          <button onClick={clearKnowledgeBase} disabled={loading}>
-            Clear Knowledge Base
-          </button>
-        </div>
+        <button onClick={clearKnowledgeBase}>
+          Clear Knowledge Base
+        </button>
 
-        {documentsLoaded && (
-          <div className="success-message">
-            <div>✓ {documents} document(s) uploaded successfully</div>
-            <div>✓ {chunks} chunks indexed</div>
-          </div>
+        {uploadMessage && (
+          <pre className="success-message">{uploadMessage}</pre>
+        )}
+      </section>
+
+      <section className="card">
+        <h2>My Documents</h2>
+
+        {documents.length === 0 ? (
+          <p>No documents uploaded yet.</p>
+        ) : (
+          documents.map((document) => (
+            <div key={document.id} className="document-item">
+              <span>📄 {document.filename}</span>
+
+              <button onClick={() => deleteDocument(document.id)}>
+                Delete
+              </button>
+            </div>
+          ))
         )}
       </section>
 
@@ -195,16 +359,19 @@ function App() {
         <textarea
           placeholder="Ask something about the uploaded document..."
           value={question}
-          onChange={(e) => setQuestion(e.target.value)}
+          onChange={(event) => setQuestion(event.target.value)}
         />
 
-        <button onClick={askQuestion} disabled={!documentsLoaded || loading}>
+        <button
+          onClick={askQuestion}
+          disabled={!documentsLoaded || loading}
+        >
           {loading ? "Thinking..." : "Ask"}
         </button>
 
         {!documentsLoaded && (
           <p className="helper-text">
-            Please click "Upload & Index" before asking questions.
+            Please upload and index documents before asking questions.
           </p>
         )}
       </section>

@@ -17,17 +17,17 @@ from app.auth import (
 from app.config import CHROMA_DB_PATH, UPLOAD_DIR
 from app.database import Base, engine, get_db
 from app.document_loader import load_and_split_pdf
-from app.models import ChatHistory, User
+from app.models import ChatHistory, User, Document
 from app.rag import create_vector_store, get_qa_chain
 
 
-app = FastAPI(
-    title="Enterprise RAG Knowledge Assistant"
-)
+app = FastAPI(title="Enterprise RAG Knowledge Assistant")
+
 
 @app.on_event("startup")
 def on_startup():
     Base.metadata.create_all(bind=engine)
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -38,6 +38,7 @@ app.add_middleware(
         "https://enterprise-rag-knowledge-assistant-fbxodrthk.vercel.app",
         "https://enterprise-rag-knowledge-assistant-5g5v0lht9.vercel.app",
     ],
+    allow_origin_regex=r"https://enterprise-rag-knowledge-assistant.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -58,9 +59,7 @@ class UserRegister(BaseModel):
 
 @app.get("/")
 def health_check():
-    return {
-        "message": "Enterprise RAG Assistant API is running"
-    }
+    return {"message": "Enterprise RAG Assistant API is running"}
 
 
 @app.post("/register")
@@ -96,9 +95,7 @@ def register_user(
     db.commit()
     db.refresh(db_user)
 
-    return {
-        "message": "User registered successfully"
-    }
+    return {"message": "User registered successfully"}
 
 
 @app.post("/login")
@@ -108,12 +105,6 @@ def login_user(
 ):
     email = form_data.username
     password = form_data.password
-
-    if len(password.encode("utf-8")) > 72:
-        raise HTTPException(
-            status_code=400,
-            detail="Password must be 72 bytes or fewer",
-        )
 
     existing_user = (
         db.query(User)
@@ -127,10 +118,7 @@ def login_user(
             detail="Invalid email or password",
         )
 
-    if not verify_password(
-        password,
-        existing_user.password
-    ):
+    if not verify_password(password, existing_user.password):
         raise HTTPException(
             status_code=401,
             detail="Invalid email or password",
@@ -154,6 +142,7 @@ def login_user(
 async def upload_document(
     files: list[UploadFile] = File(...),
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     user_upload_dir = os.path.join(
         UPLOAD_DIR,
@@ -171,18 +160,33 @@ async def upload_document(
         )
 
         with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(
-                file.file,
-                buffer
-            )
+            shutil.copyfileobj(file.file, buffer)
 
         docs = load_and_split_pdf(file_path)
         all_documents.extend(docs)
+
+        existing_document = (
+            db.query(Document)
+            .filter(
+                Document.user_id == current_user.id,
+                Document.filename == file.filename,
+            )
+            .first()
+        )
+
+        if not existing_document:
+            new_document = Document(
+                user_id=current_user.id,
+                filename=file.filename,
+            )
+            db.add(new_document)
 
     create_vector_store(
         all_documents,
         current_user.id,
     )
+
+    db.commit()
 
     return {
         "message": "Documents uploaded successfully",
@@ -190,6 +194,68 @@ async def upload_document(
         "chunks": len(all_documents),
         "user": current_user.email,
     }
+
+
+@app.get("/documents")
+def get_documents(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    documents = (
+        db.query(Document)
+        .filter(Document.user_id == current_user.id)
+        .order_by(Document.uploaded_at.desc())
+        .all()
+    )
+
+    return [
+        {
+            "id": document.id,
+            "filename": document.filename,
+            "uploaded_at": document.uploaded_at,
+        }
+        for document in documents
+    ]
+
+
+@app.delete("/documents/{document_id}")
+def delete_document(
+    document_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    document = (
+        db.query(Document)
+        .filter(
+            Document.id == document_id,
+            Document.user_id == current_user.id,
+        )
+        .first()
+    )
+
+    if not document:
+        raise HTTPException(
+            status_code=404,
+            detail="Document not found",
+        )
+
+    user_upload_dir = os.path.join(
+        UPLOAD_DIR,
+        f"user_{current_user.id}",
+    )
+
+    file_path = os.path.join(
+        user_upload_dir,
+        document.filename,
+    )
+
+    if os.path.exists(file_path):
+        os.remove(file_path)
+
+    db.delete(document)
+    db.commit()
+
+    return {"message": "Document deleted successfully"}
 
 
 @app.post("/ask")
@@ -239,13 +305,11 @@ Current Question:
         source = os.path.basename(
             doc.metadata.get("source", "")
         )
-
         page = doc.metadata.get("page", 0) + 1
         key = (source, page)
 
         if key not in seen:
             seen.add(key)
-
             sources.append(
                 {
                     "source": source,
@@ -280,6 +344,10 @@ def clear_knowledge_base(
         ChatHistory.user_id == current_user.id
     ).delete()
 
+    db.query(Document).filter(
+        Document.user_id == current_user.id
+    ).delete()
+
     db.commit()
 
     user_chroma_path = os.path.join(
@@ -294,9 +362,7 @@ def clear_knowledge_base(
             return {
                 "message": (
                     "ChromaDB is currently in use. "
-                    "Please stop the backend server, "
-                    "manually delete the user's chroma_db folder, "
-                    "then restart."
+                    "Please stop the backend server, manually delete the folder, then restart."
                 )
             }
 

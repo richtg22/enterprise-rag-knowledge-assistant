@@ -26,3 +26,27 @@ class ChatHistory(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("User", back_populates="chats")
+
+
+class Document(Base):
+    __tablename__ = "documents"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    user_id = Column(
+        Integer,
+        ForeignKey("users.id"),
+        nullable=False
+    )
+
+    filename = Column(
+        String(255),
+        nullable=False
+    )
+
+    uploaded_at = Column(
+        DateTime,
+        default=datetime.utcnow
+    )
+
+    user = relationship("User")
