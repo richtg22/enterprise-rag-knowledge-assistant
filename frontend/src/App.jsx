@@ -3,7 +3,7 @@ import axios from "axios";
 import "./App.css";
 import AuthPage from "./components/AuthPage";
 
-const API_BASE_URL = "http://127.0.0.1:8000";
+const API_BASE_URL = "https://enterprise-rag-knowledge-assistant.onrender.com";
 
 function App() {
   const [file, setFile] = useState(null);
