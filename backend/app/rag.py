@@ -110,15 +110,21 @@ def delete_document_vectors(user_id: int, filename: str):
 
     collection = vector_store._collection
 
-    results = collection.get(
-        where={
-            "filename": filename
-        }
-    )
+    results = collection.get()
 
-    ids = results.get("ids", [])
+    ids_to_delete = []
 
-    if ids:
-        collection.delete(ids=ids)
+    for doc_id, metadata in zip(
+        results.get("ids", []),
+        results.get("metadatas", []),
+    ):
+        source = metadata.get("source","")
+        stored_filename = metadata.get("filename", "")
 
-    return len(ids)
+        if stored_filename == filename or source.endswith(filename):
+            ids_to_delete.append(doc_id)
+
+    if ids_to_delete:
+        collection.delete(ids=ids_to_delete)
+
+    return len(ids_to_delete)

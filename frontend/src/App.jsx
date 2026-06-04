@@ -175,7 +175,7 @@ function App() {
       );
 
       await loadDocuments();
-
+      setFiles([]);
       alert("Document deleted successfully.");
     } catch (error) {
       console.error(error);
