@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import axios from "axios";
 import "./App.css";
 
@@ -22,6 +22,8 @@ function App() {
 
   const [loading, setLoading] = useState(false);
   const [uploadMessage, setUploadMessage] = useState("");
+  
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     const savedUser = localStorage.getItem("user");
@@ -175,7 +177,15 @@ function App() {
       );
 
       await loadDocuments();
+
       setFiles([]);
+      setDocumentsLoaded(false);
+      setUploadMessage("");
+
+      if(fileInputRef.current){
+        fileInputRef.current.value = "";
+      }
+
       alert("Document deleted successfully.");
     } catch (error) {
       console.error(error);
@@ -201,6 +211,10 @@ function App() {
       setDocumentsLoaded(false);
       setChatHistory([]);
       setUploadMessage("");
+
+      if(fileInputRef.current){
+        fileInputRef.current.value = "";
+      }
 
       alert("Knowledge base cleared successfully.");
     } catch (error) {
@@ -307,6 +321,7 @@ function App() {
         <h2>Upload Document</h2>
 
         <input
+          ref={fileInputRef}
           type="file"
           multiple
           accept="application/pdf"
