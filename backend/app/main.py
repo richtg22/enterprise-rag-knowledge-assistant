@@ -17,7 +17,7 @@ from app.auth import (
 from app.config import CHROMA_DB_PATH, UPLOAD_DIR
 from app.database import Base, engine, get_db
 from app.document_loader import load_and_split_pdf
-from app.models import ChatHistory, User, Document
+from app.models import ChatHistory, User, Document, Conversation
 from app.rag import create_vector_store, get_qa_chain, delete_document_vectors
 
 
@@ -49,6 +49,11 @@ MAX_HISTORY = 5
 
 class QuestionRequest(BaseModel):
     question: str
+    conversation_id: int | None = None
+
+
+class ConversationRequest(BaseModel):
+    title: str = "New Conversation"
 
 
 class UserRegister(BaseModel):
@@ -63,27 +68,11 @@ def health_check():
 
 
 @app.post("/register")
-def register_user(
-    user: UserRegister,
-    db: Session = Depends(get_db),
-):
-    if len(user.password.encode("utf-8")) > 72:
-        raise HTTPException(
-            status_code=400,
-            detail="Password must be 72 bytes or fewer",
-        )
-
-    existing_user = (
-        db.query(User)
-        .filter(User.email == user.email)
-        .first()
-    )
+def register_user(user: UserRegister, db: Session = Depends(get_db)):
+    existing_user = db.query(User).filter(User.email == user.email).first()
 
     if existing_user:
-        raise HTTPException(
-            status_code=400,
-            detail="User already exists",
-        )
+        raise HTTPException(status_code=400, detail="User already exists")
 
     db_user = User(
         name=user.name,
@@ -106,27 +95,15 @@ def login_user(
     email = form_data.username
     password = form_data.password
 
-    existing_user = (
-        db.query(User)
-        .filter(User.email == email)
-        .first()
-    )
+    existing_user = db.query(User).filter(User.email == email).first()
 
     if not existing_user:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid email or password",
-        )
+        raise HTTPException(status_code=401, detail="Invalid email or password")
 
     if not verify_password(password, existing_user.password):
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid email or password",
-        )
+        raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    token = create_access_token(
-        data={"sub": existing_user.email}
-    )
+    token = create_access_token(data={"sub": existing_user.email})
 
     return {
         "access_token": token,
@@ -144,20 +121,13 @@ async def upload_document(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    user_upload_dir = os.path.join(
-        UPLOAD_DIR,
-        f"user_{current_user.id}",
-    )
-
+    user_upload_dir = os.path.join(UPLOAD_DIR, f"user_{current_user.id}")
     os.makedirs(user_upload_dir, exist_ok=True)
 
     all_documents = []
 
     for file in files:
-        file_path = os.path.join(
-            user_upload_dir,
-            file.filename,
-        )
+        file_path = os.path.join(user_upload_dir, file.filename)
 
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -180,16 +150,14 @@ async def upload_document(
         )
 
         if not existing_document:
-            new_document = Document(
-                user_id=current_user.id,
-                filename=file.filename,
+            db.add(
+                Document(
+                    user_id=current_user.id,
+                    filename=file.filename,
+                )
             )
-            db.add(new_document)
 
-    create_vector_store(
-        all_documents,
-        current_user.id,
-    )
+    create_vector_store(all_documents, current_user.id)
 
     db.commit()
 
@@ -239,25 +207,15 @@ def delete_document(
     )
 
     if not document:
-        raise HTTPException(
-            status_code=404,
-            detail="Document not found",
-        )
-    
+        raise HTTPException(status_code=404, detail="Document not found")
+
     deleted_vectors = delete_document_vectors(
         current_user.id,
         document.filename,
     )
 
-    user_upload_dir = os.path.join(
-        UPLOAD_DIR,
-        f"user_{current_user.id}",
-    )
-
-    file_path = os.path.join(
-        user_upload_dir,
-        document.filename,
-    )
+    user_upload_dir = os.path.join(UPLOAD_DIR, f"user_{current_user.id}")
+    file_path = os.path.join(user_upload_dir, document.filename)
 
     if os.path.exists(file_path):
         os.remove(file_path)
@@ -265,9 +223,124 @@ def delete_document(
     db.delete(document)
     db.commit()
 
-    return {"message": "Document deleted successfully",
-            "deleted_vectors": deleted_vectors,
-            }
+    return {
+        "message": "Document deleted successfully",
+        "deleted_vectors": deleted_vectors,
+    }
+
+
+@app.post("/conversations")
+def create_conversation(
+    request: ConversationRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    conversation = Conversation(
+        user_id=current_user.id,
+        title=request.title,
+    )
+
+    db.add(conversation)
+    db.commit()
+    db.refresh(conversation)
+
+    return {
+        "id": conversation.id,
+        "title": conversation.title,
+        "created_at": conversation.created_at,
+    }
+
+
+@app.get("/conversations")
+def get_conversations(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    conversations = (
+        db.query(Conversation)
+        .filter(Conversation.user_id == current_user.id)
+        .order_by(Conversation.created_at.desc())
+        .all()
+    )
+
+    return [
+        {
+            "id": conversation.id,
+            "title": conversation.title,
+            "created_at": conversation.created_at,
+        }
+        for conversation in conversations
+    ]
+
+
+@app.get("/conversations/{conversation_id}/chats")
+def get_conversation_chats(
+    conversation_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    conversation = (
+        db.query(Conversation)
+        .filter(
+            Conversation.id == conversation_id,
+            Conversation.user_id == current_user.id,
+        )
+        .first()
+    )
+
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    chats = (
+        db.query(ChatHistory)
+        .filter(
+            ChatHistory.user_id == current_user.id,
+            ChatHistory.conversation_id == conversation_id,
+        )
+        .order_by(ChatHistory.created_at.asc())
+        .all()
+    )
+
+    return [
+        {
+            "id": chat.id,
+            "question": chat.question,
+            "answer": chat.answer,
+            "created_at": chat.created_at,
+            "sources": [],
+        }
+        for chat in chats
+    ]
+
+
+@app.delete("/conversations/{conversation_id}")
+def delete_conversation(
+    conversation_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    conversation = (
+        db.query(Conversation)
+        .filter(
+            Conversation.id == conversation_id,
+            Conversation.user_id == current_user.id,
+        )
+        .first()
+    )
+
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    db.query(ChatHistory).filter(
+        ChatHistory.user_id == current_user.id,
+        ChatHistory.conversation_id == conversation_id,
+    ).delete()
+
+    db.delete(conversation)
+    db.commit()
+
+    return {"message": "Conversation deleted successfully"}
+
 
 @app.get("/chat-history")
 def get_chat_history(
@@ -287,10 +360,12 @@ def get_chat_history(
             "question": chat.question,
             "answer": chat.answer,
             "created_at": chat.created_at,
+            "conversation_id": chat.conversation_id,
             "sources": [],
         }
         for chat in chats
     ]
+
 
 @app.post("/ask")
 def ask_question(
@@ -300,9 +375,38 @@ def ask_question(
 ):
     qa_chain = get_qa_chain(current_user.id)
 
+    conversation_id = request.conversation_id
+
+    if conversation_id is None:
+        conversation = Conversation(
+            user_id=current_user.id,
+            title=request.question[:50],
+        )
+
+        db.add(conversation)
+        db.commit()
+        db.refresh(conversation)
+
+        conversation_id = conversation.id
+    else:
+        conversation = (
+            db.query(Conversation)
+            .filter(
+                Conversation.id == conversation_id,
+                Conversation.user_id == current_user.id,
+            )
+            .first()
+        )
+
+        if not conversation:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+
     recent_chats = (
         db.query(ChatHistory)
-        .filter(ChatHistory.user_id == current_user.id)
+        .filter(
+            ChatHistory.user_id == current_user.id,
+            ChatHistory.conversation_id == conversation_id,
+        )
         .order_by(ChatHistory.created_at.desc())
         .limit(MAX_HISTORY)
         .all()
@@ -328,17 +432,13 @@ Current Question:
 {request.question}
 """
 
-    response = qa_chain.invoke(
-        {"query": contextual_question}
-    )
+    response = qa_chain.invoke({"query": contextual_question})
 
     sources = []
     seen = set()
 
     for doc in response["source_documents"]:
-        source = os.path.basename(
-            doc.metadata.get("source", "")
-        )
+        source = os.path.basename(doc.metadata.get("source", ""))
         page = doc.metadata.get("page", 0) + 1
         key = (source, page)
 
@@ -353,6 +453,7 @@ Current Question:
 
     new_chat = ChatHistory(
         user_id=current_user.id,
+        conversation_id=conversation_id,
         question=request.question,
         answer=response["result"],
     )
@@ -364,6 +465,7 @@ Current Question:
         "answer": response["result"],
         "sources": sources,
         "user": current_user.email,
+        "conversation_id": conversation_id,
     }
 
 
@@ -374,20 +476,13 @@ def clear_knowledge_base(
 ):
     gc.collect()
 
-    db.query(ChatHistory).filter(
-        ChatHistory.user_id == current_user.id
-    ).delete()
-
-    db.query(Document).filter(
-        Document.user_id == current_user.id
-    ).delete()
+    db.query(ChatHistory).filter(ChatHistory.user_id == current_user.id).delete()
+    db.query(Conversation).filter(Conversation.user_id == current_user.id).delete()
+    db.query(Document).filter(Document.user_id == current_user.id).delete()
 
     db.commit()
 
-    user_chroma_path = os.path.join(
-        CHROMA_DB_PATH,
-        f"user_{current_user.id}",
-    )
+    user_chroma_path = os.path.join(CHROMA_DB_PATH, f"user_{current_user.id}")
 
     if os.path.exists(user_chroma_path):
         try:
@@ -400,10 +495,7 @@ def clear_knowledge_base(
                 )
             }
 
-    user_upload_dir = os.path.join(
-        UPLOAD_DIR,
-        f"user_{current_user.id}",
-    )
+    user_upload_dir = os.path.join(UPLOAD_DIR, f"user_{current_user.id}")
 
     if os.path.exists(user_upload_dir):
         shutil.rmtree(user_upload_dir)

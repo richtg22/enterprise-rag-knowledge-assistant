@@ -14,39 +14,44 @@ class User(Base):
     password = Column(String(255), nullable=False)
 
     chats = relationship("ChatHistory", back_populates="user")
+    documents = relationship("Document", back_populates="user")
+    conversations = relationship("Conversation", back_populates="user")
 
+class Document(Base):
+    __tablename__ = "documents"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    filename = Column(String(255), nullable=False)
+    uploaded_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", back_populates="documents")
+
+
+class Conversation(Base):
+    __tablename__ = "conversations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    title = Column(String(255), nullable=False, default="New Conversation")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", back_populates="conversations")
+    chats = relationship("ChatHistory", back_populates="conversation")
 
 class ChatHistory(Base):
     __tablename__ = "chat_history"
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    conversation_id = Column(
+        Integer,
+        ForeignKey("conversations.id"),
+        nullable=True,
+    )
     question = Column(Text, nullable=False)
     answer = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("User", back_populates="chats")
-
-
-class Document(Base):
-    __tablename__ = "documents"
-
-    id = Column(Integer, primary_key=True, index=True)
-
-    user_id = Column(
-        Integer,
-        ForeignKey("users.id"),
-        nullable=False
-    )
-
-    filename = Column(
-        String(255),
-        nullable=False
-    )
-
-    uploaded_at = Column(
-        DateTime,
-        default=datetime.utcnow
-    )
-
-    user = relationship("User")
+    conversation = relationship("Conversation", back_populates="chats")
