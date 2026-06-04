@@ -322,13 +322,20 @@ function App() {
           </div>
         )}
 
-        <button onClick={uploadDocuments} disabled={loading}>
-          {loading ? "Uploading..." : "Upload & Index"}
-        </button>
-
-        <button onClick={clearKnowledgeBase}>
-          Clear Knowledge Base
-        </button>
+        <div className="action-buttons">
+          <button className="upload-btn"
+          onClick={uploadDocuments}
+          disabled={loading}
+          >
+            {loading ? "Uploading..." : "📤 Upload & Index"}
+          </button>
+          
+          <button className="clear-btn"
+          onClick={clearKnowledgeBase}
+          >
+            🗑 Clear Knowledge Base
+          </button>
+        </div>
 
         {uploadMessage && (
           <pre className="success-message">{uploadMessage}</pre>
