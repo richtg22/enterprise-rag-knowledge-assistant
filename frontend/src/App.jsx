@@ -31,6 +31,7 @@ function App() {
     if (savedUser && token) {
       setUser(JSON.parse(savedUser));
       loadDocuments();
+      loadChatHistory();
     }
   }, [token]);
 
@@ -82,6 +83,7 @@ function App() {
       setPassword("");
 
       await loadDocuments();
+      await loadChatHistory();
     } catch (error) {
       console.error(error);
       alert(error.response?.data?.detail || "Login failed");
@@ -222,6 +224,26 @@ function App() {
       alert(error.response?.data?.detail || "Failed to clear knowledge base.");
     }
   };
+
+  const loadChatHistory = async () => {
+  try {
+    const response = await axios.get(
+      `${API_BASE_URL}/chat-history`,
+      authHeaders()
+    );
+
+    const formattedChats = response.data.map((chat) => ({
+      question: chat.question,
+      answer: chat.answer,
+      sources: chat.sources || [],
+      timestamp: new Date(chat.created_at).toLocaleTimeString(),
+    }));
+
+    setChatHistory(formattedChats);
+  } catch (error) {
+    console.error(error);
+  }
+};
 
   const askQuestion = async () => {
     if (!question.trim()) {

@@ -269,6 +269,28 @@ def delete_document(
             "deleted_vectors": deleted_vectors,
             }
 
+@app.get("/chat-history")
+def get_chat_history(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    chats = (
+        db.query(ChatHistory)
+        .filter(ChatHistory.user_id == current_user.id)
+        .order_by(ChatHistory.created_at.asc())
+        .all()
+    )
+
+    return [
+        {
+            "id": chat.id,
+            "question": chat.question,
+            "answer": chat.answer,
+            "created_at": chat.created_at,
+            "sources": [],
+        }
+        for chat in chats
+    ]
 
 @app.post("/ask")
 def ask_question(
