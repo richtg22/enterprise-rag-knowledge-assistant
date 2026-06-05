@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import axios from "axios";
 import "./App.css";
 
-const API_BASE_URL = "https://enterprise-rag-knowledge-assistant.onrender.com";
-// const API_BASE_URL = "http://127.0.0.1:8000";
+// const API_BASE_URL = "https://enterprise-rag-knowledge-assistant.onrender.com";
+const API_BASE_URL = "http://127.0.0.1:8000";
 
 function App() {
   const [isLogin, setIsLogin] = useState(true);
@@ -241,6 +241,20 @@ function App() {
     }
   };
 
+  const viewDocument = async (documentId) => {
+  try {
+    const response = await axios.get(
+      `${API_BASE_URL}/documents/${documentId}/view`,
+      authHeaders()
+    );
+
+    window.open(response.data.url, "_blank");
+  } catch (error) {
+    console.error(error);
+    alert(error.response?.data?.detail || "Failed to open document.");
+  }
+};
+
   const deleteDocument = async (documentId) => {
     const confirmDelete = window.confirm("Are you sure you want to delete this document?");
 
@@ -314,10 +328,7 @@ function App() {
 
       const conversationId = response.data.conversation_id;
 
-      if (!activeConversationId) {
-        setActiveConversationId(conversationId);
-        await loadConversations();
-      }
+      await loadConversations();
 
       const newChat = {
         question,
@@ -477,9 +488,20 @@ function App() {
               <div key={document.id} className="document-item">
                 <span>📄 {document.filename}</span>
 
-                <button className="small-danger-btn" onClick={() => deleteDocument(document.id)}>
-                  Delete
-                </button>
+                <div className="document-actions">
+                  <button 
+                    className="small-view-btn"
+                    onClick={() => viewDocument(document.id)}
+                    >
+                      View
+                    </button>
+                    <button
+                      className="small-danger-btn"
+                      onClick={() => deleteDocument(document.id)}
+                    >
+                      Delete
+                    </button>
+                </div>
               </div>
             ))
           )}

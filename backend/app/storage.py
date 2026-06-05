@@ -61,3 +61,15 @@ def delete_file_from_supabase(user_id: int, filename: str):
         print("Storage delete error:", error)
 
     return storage_path
+
+def get_signed_url(storage_path: str):
+    response = (
+        supabase.storage
+        .from_(SUPABASE_BUCKET)
+        .create_signed_url(
+            storage_path,
+            3600,  # 1 hour
+        )
+    )
+
+    return response["signedURL"]

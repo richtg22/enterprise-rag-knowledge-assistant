@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from app.utils.title_generator import generate_chat_title
 
 from app.auth import (
     create_access_token,
@@ -19,7 +20,7 @@ from app.database import Base, engine, get_db
 from app.document_loader import load_and_split_pdf
 from app.models import ChatHistory, User, Document, Conversation
 from app.rag import create_vector_store, get_qa_chain, delete_document_vectors
-from app.storage import upload_file_to_supabase, delete_file_from_supabase
+from app.storage import upload_file_to_supabase, delete_file_from_supabase, get_signed_url
 
 app = FastAPI(title="Enterprise RAG Knowledge Assistant")
 
@@ -145,8 +146,6 @@ async def upload_document(
             file_path,
         )
 
-        print("UPLOADED TO:", storage_path)
-
         docs = load_and_split_pdf(file_path)
 
         for doc in docs:
@@ -165,11 +164,14 @@ async def upload_document(
             .first()
         )
 
-        if not existing_document:
+        if existing_document:
+            existing_document.storage_path = storage_path
+        else:
             db.add(
                 Document(
                     user_id=current_user.id,
                     filename=file.filename,
+                    storage_path=storage_path,
                 )
             )
 
@@ -204,10 +206,46 @@ def get_documents(
         {
             "id": document.id,
             "filename": document.filename,
+            "storage_path": document.storage_path,
             "uploaded_at": document.uploaded_at,
         }
         for document in documents
     ]
+
+@app.get("/documents/{document_id}/view")
+def view_document(
+    document_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    document = (
+        db.query(Document)
+        .filter(
+            Document.id == document_id,
+            Document.user_id == current_user.id,
+        )
+        .first()
+    )
+
+    if not document:
+        raise HTTPException(
+            status_code=404,
+            detail="Document not found",
+        )
+
+    if not document.storage_path:
+        raise HTTPException(
+            status_code=404,
+            detail="Storage path missing",
+        )
+
+    signed_url = get_signed_url(
+        document.storage_path
+    )
+
+    return {
+        "url": signed_url
+    }
 
 @app.delete("/documents/{document_id}")
 def delete_document(
@@ -304,6 +342,35 @@ def get_conversations(
         for conversation in conversations
     ]
 
+@app.put("/conversations/{conversation_id}")
+def update_conversation_title(
+    conversation_id: int,
+    request: ConversationRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    conversation = (
+        db.query(Conversation)
+        .filter(
+            Conversation.id == conversation_id,
+            Conversation.user_id == current_user.id,
+        )
+        .first()
+    )
+
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    conversation.title = request.title[:50] or "New Conversation"
+
+    db.commit()
+    db.refresh(conversation)
+
+    return {
+        "id": conversation.id,
+        "title": conversation.title,
+        "created_at": conversation.created_at,
+    }
 
 @app.get("/conversations/{conversation_id}/chats")
 def get_conversation_chats(
@@ -410,9 +477,11 @@ def ask_question(
     conversation_id = request.conversation_id
 
     if conversation_id is None:
+        generated_title = generate_chat_title(request.question)
+
         conversation = Conversation(
             user_id=current_user.id,
-            title=request.question[:50],
+            title=generated_title or request.question[:50] or "New Conversation",
         )
 
         db.add(conversation)
@@ -431,7 +500,20 @@ def ask_question(
         )
 
         if not conversation:
-            raise HTTPException(status_code=404, detail="Conversation not found")
+            raise HTTPException(
+                status_code=404,
+                detail="Conversation not found",
+            )
+
+        if conversation.title == "New Conversation":
+            generated_title = generate_chat_title(request.question)
+            conversation.title = (
+                generated_title
+                or request.question[:50]
+                or "New Conversation"
+            )
+            db.commit()
+            db.refresh(conversation)
 
     recent_chats = (
         db.query(ChatHistory)
@@ -464,13 +546,17 @@ Current Question:
 {request.question}
 """
 
-    response = qa_chain.invoke({"query": contextual_question})
+    response = qa_chain.invoke(
+        {"query": contextual_question}
+    )
 
     sources = []
     seen = set()
 
     for doc in response["source_documents"]:
-        source = os.path.basename(doc.metadata.get("source", ""))
+        source = os.path.basename(
+            doc.metadata.get("source", "")
+        )
         page = doc.metadata.get("page", 0) + 1
         key = (source, page)
 
@@ -498,8 +584,8 @@ Current Question:
         "sources": sources,
         "user": current_user.email,
         "conversation_id": conversation_id,
+        "conversation_title": conversation.title,
     }
-
 
 @app.delete("/clear")
 def clear_knowledge_base(

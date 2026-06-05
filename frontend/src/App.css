@@ -401,3 +401,21 @@ textarea:focus {
     padding: 20px;
   }
 }
+
+.document-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.small-view-btn {
+  background: #16a34a;
+  color: white;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.small-view-btn:hover {
+  background: #15803d;
+}
