@@ -327,6 +327,12 @@ Display Sources
 
 ---
 
+## Live Demo
+
+Frontend: https://enterprise-rag-knowledge-assistant-seven.vercel.app
+
+Backend API: https://enterprise-rag-knowledge-assistant.onrender.com
+
 ## Author
 
 Developed as a full-stack GenAI application demonstrating Retrieval-Augmented Generation (RAG), hybrid search, conversational AI, cloud-native architecture, secure document management, and production-grade AI system design.
