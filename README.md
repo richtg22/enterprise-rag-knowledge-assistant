@@ -85,6 +85,10 @@ docker compose up --build
 * Enterprise Prompting
 * Multi-turn Question Answering
 * Dockerized frontend/backend
+* AI Generated Conversation Titles
+* Supabase Storage Integration
+* Cloud PDF Preview
+* Conversation Management
 
 ## Example Conversation
 
