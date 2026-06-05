@@ -10,21 +10,8 @@ from app.config import CHROMA_DB_PATH, GROQ_API_KEY
 
 from rank_bm25 import BM25Okapi
 from langchain.schema import Document
-from sentence_transformers import CrossEncoder
 
 _embedding_model = None
-
-_reranker = None
-
-def get_reranker():
-    global _reranker
-
-    if _reranker is None:
-        _reranker = CrossEncoder(
-            "cross-encoder/ms-marco-MiniLM-L-6-v2"
-        )
-
-    return _reranker
 
 def get_embedding_model():
     global _embedding_model
@@ -204,33 +191,3 @@ def hybrid_retrieve(user_id: int, query: str, k: int = 5):
             combined_docs.append(doc)
 
     return combined_docs[:k]
-
-def rerank_documents(
-    query: str,
-    documents,
-    top_k: int = 5,
-):
-    if not documents:
-        return []
-
-    reranker = get_reranker()
-
-    pairs = [
-        (query, doc.page_content)
-        for doc in documents
-    ]
-
-    scores = reranker.predict(
-        pairs
-    )
-
-    ranked = sorted(
-        zip(documents, scores),
-        key=lambda x: x[1],
-        reverse=True,
-    )
-
-    return [
-        doc
-        for doc, score in ranked[:top_k]
-    ]

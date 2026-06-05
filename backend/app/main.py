@@ -22,7 +22,7 @@ from app.database import Base, engine, get_db
 from app.document_loader import load_and_split_pdf
 from app.models import ChatHistory, User, Document, Conversation
 from app.rag import ( 
-    create_vector_store, get_qa_chain, delete_document_vectors, hybrid_retrieve, rerank_documents,
+    create_vector_store, get_qa_chain, delete_document_vectors, hybrid_retrieve,
 )
 
 from app.storage import upload_file_to_supabase, delete_file_from_supabase, get_signed_url
@@ -555,13 +555,7 @@ Current Question:
     retrieved_docs = hybrid_retrieve(
         current_user.id,
         contextual_question,
-        k=10,
-    )
-
-    retrieved_docs = rerank_documents(
-        contextual_question,
-        retrieved_docs,
-        top_k=5,
+        k=5,
     )
 
     if not retrieved_docs:

@@ -28,7 +28,6 @@ The application combines vector search, keyword-based retrieval, cloud storage, 
 ### Retrieval-Augmented Generation
 
 * Hybrid Search (BM25 + Vector Search)
-* Cross-Encoder Reranking
 * ChromaDB Vector Store
 * FastEmbed Embeddings
 * Source-grounded Responses
@@ -86,8 +85,6 @@ The application combines vector search, keyword-based retrieval, cloud storage, 
 * FastEmbed Embeddings
 * Groq LLM (Llama 3.1)
 * BM25 Retrieval
-* Sentence Transformers
-* Cross-Encoder Reranking
 
 ### Database & Storage
 
@@ -121,8 +118,7 @@ FastAPI Backend (Render)
  │
  ├── Hybrid Retrieval Engine
  │      ├── BM25 Search
- │      └── Vector Search
- │      └── Cross-Encoder Reranking
+ │      └── Vector Search 
  ├── Groq LLM Streaming
  │
  ├── ChromaDB
@@ -146,12 +142,6 @@ Hybrid Retrieval
 │
 ▼
 Merge & Deduplicate Results
-│
-▼
-Cross-Encoder Reranker
-│
-▼
-Top Ranked Chunks
 │
 ▼
 Groq LLM
@@ -223,7 +213,6 @@ UPLOAD_DIR=uploads
 * Supabase Storage Integration
 * Multi-PDF Upload
 * Hybrid Search (BM25 + Vector Search)
-* Cross-Encoder Reranking
 * ChromaDB Vector Storage
 * Streaming Responses
 * AI-generated Conversation Titles
@@ -257,12 +246,6 @@ Vector Search + BM25 Search
 │
 ▼
 Merge Results
-│
-▼
-Cross-Encoder Reranking
-│
-▼
-Top Ranked Chunks
 │
 ▼
 Groq LLM
@@ -314,6 +297,7 @@ Display Sources
 
 ## Future Enhancements
 
+* Cross-Encoder Reranking
 * Retrieval Analytics Dashboard
 * Chat Export to PDF
 * Admin Dashboard
@@ -345,4 +329,4 @@ Display Sources
 
 ## Author
 
-Developed as a full-stack GenAI application demonstrating Retrieval-Augmented Generation (RAG), hybrid search, cross-encoder reranking, conversational AI, cloud-native architecture, secure document management, and production-grade AI system design.
+Developed as a full-stack GenAI application demonstrating Retrieval-Augmented Generation (RAG), hybrid search, conversational AI, cloud-native architecture, secure document management, and production-grade AI system design.
