@@ -1,10 +1,12 @@
 import gc
 import os
 import shutil
+import json
 
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.utils.title_generator import generate_chat_title
@@ -641,6 +643,216 @@ Answer:
         "conversation_id": conversation_id,
         "conversation_title": conversation.title,
     }
+
+@app.post("/ask/stream")
+def ask_question_stream(
+    request: QuestionRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    def generate_response():
+        conversation_id = request.conversation_id
+
+        if conversation_id is None:
+            generated_title = generate_chat_title(request.question)
+
+            conversation = Conversation(
+                user_id=current_user.id,
+                title=generated_title or request.question[:50] or "New Conversation",
+            )
+
+            db.add(conversation)
+            db.commit()
+            db.refresh(conversation)
+
+            active_conversation_id = conversation.id
+        else:
+            conversation = (
+                db.query(Conversation)
+                .filter(
+                    Conversation.id == conversation_id,
+                    Conversation.user_id == current_user.id,
+                )
+                .first()
+            )
+
+            if not conversation:
+                yield json.dumps(
+                    {"type": "error", "message": "Conversation not found"}
+                ) + "\n"
+                return
+
+            if conversation.title == "New Conversation":
+                generated_title = generate_chat_title(request.question)
+                conversation.title = (
+                    generated_title
+                    or request.question[:50]
+                    or "New Conversation"
+                )
+                db.commit()
+                db.refresh(conversation)
+
+            active_conversation_id = conversation.id
+
+        yield json.dumps(
+            {
+                "type": "metadata",
+                "conversation_id": active_conversation_id,
+                "conversation_title": conversation.title,
+            }
+        ) + "\n"
+
+        recent_chats = (
+            db.query(ChatHistory)
+            .filter(
+                ChatHistory.user_id == current_user.id,
+                ChatHistory.conversation_id == active_conversation_id,
+            )
+            .order_by(ChatHistory.created_at.desc())
+            .limit(MAX_HISTORY)
+            .all()
+        )
+
+        history_text = ""
+
+        for chat in reversed(recent_chats):
+            history_text += f"""
+Previous Question:
+{chat.question}
+
+Previous Answer:
+{chat.answer}
+
+"""
+
+        contextual_question = f"""
+Conversation History:
+{history_text}
+
+Current Question:
+{request.question}
+"""
+
+        retrieved_docs = hybrid_retrieve(
+            current_user.id,
+            contextual_question,
+            k=5,
+        )
+
+        sources = []
+
+        if not retrieved_docs:
+            answer = "I could not find that information in the uploaded documents."
+
+            yield json.dumps(
+                {
+                    "type": "chunk",
+                    "content": answer,
+                }
+            ) + "\n"
+
+        else:
+            context = "\n\n".join(
+                [
+                    f"Source: {os.path.basename(doc.metadata.get('source', ''))}, "
+                    f"Page: {doc.metadata.get('page', 0) + 1}\n"
+                    f"{doc.page_content}"
+                    for doc in retrieved_docs
+                ]
+            )
+
+            seen = set()
+
+            for doc in retrieved_docs:
+                source = os.path.basename(doc.metadata.get("source", ""))
+                page = doc.metadata.get("page", 0) + 1
+                key = (source, page)
+
+                if key not in seen:
+                    seen.add(key)
+                    sources.append(
+                        {
+                            "source": source,
+                            "page": page,
+                        }
+                    )
+
+            llm = ChatGroq(
+                groq_api_key=GROQ_API_KEY,
+                model_name="llama-3.1-8b-instant",
+                temperature=0,
+                streaming=True,
+            )
+
+            prompt = f"""
+You are an enterprise knowledge assistant.
+
+Use ONLY the information provided in the context.
+
+When the user asks for:
+- a summary
+- what the document is about
+- what the document says
+
+provide a concise but complete summary of the retrieved content.
+
+Do not say "the context appears to be".
+
+Answer confidently using the retrieved information.
+
+If the answer is not contained in the context, respond:
+
+"I could not find that information in the uploaded documents."
+
+Context:
+{context}
+
+Question:
+{contextual_question}
+
+Answer:
+"""
+
+            answer_parts = []
+
+            for chunk in llm.stream(prompt):
+                token = chunk.content or ""
+
+                if token:
+                    answer_parts.append(token)
+
+                    yield json.dumps(
+                        {
+                            "type": "chunk",
+                            "content": token,
+                        }
+                    ) + "\n"
+
+            answer = "".join(answer_parts)
+
+        new_chat = ChatHistory(
+            user_id=current_user.id,
+            conversation_id=active_conversation_id,
+            question=request.question,
+            answer=answer,
+        )
+
+        db.add(new_chat)
+        db.commit()
+
+        yield json.dumps(
+            {
+                "type": "done",
+                "sources": sources,
+                "conversation_id": active_conversation_id,
+                "conversation_title": conversation.title,
+            }
+        ) + "\n"
+
+    return StreamingResponse(
+        generate_response(),
+        media_type="application/x-ndjson",
+    )
 
 @app.delete("/clear")
 def clear_knowledge_base(

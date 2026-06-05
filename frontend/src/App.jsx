@@ -309,43 +309,114 @@ function App() {
   };
 
   const askQuestion = async () => {
-    if (!question.trim()) {
-      alert("Please enter a question.");
-      return;
+  if (!question.trim()) {
+    alert("Please enter a question.");
+    return;
+  }
+
+  try {
+    setLoading(true);
+
+    const userQuestion = question;
+    setQuestion("");
+
+    const placeholderChat = {
+      question: userQuestion,
+      answer: "",
+      sources: [],
+      timestamp: new Date().toLocaleTimeString(),
+    };
+
+    setChatHistory((previous) => [...previous, placeholderChat]);
+
+    const response = await fetch(`${API_BASE_URL}/ask/stream`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${localStorage.getItem("token")}`,
+      },
+      body: JSON.stringify({
+        question: userQuestion,
+        conversation_id: activeConversationId,
+      }),
+    });
+
+    if (!response.body) {
+      throw new Error("Streaming not supported.");
     }
 
-    try {
-      setLoading(true);
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder("utf-8");
 
-      const response = await axios.post(
-        `${API_BASE_URL}/ask`,
-        {
-          question,
-          conversation_id: activeConversationId,
-        },
-        authHeaders()
-      );
+    let streamedAnswer = "";
+    let finalSources = [];
+    let finalConversationId = activeConversationId;
 
-      const conversationId = response.data.conversation_id;
+    while (true) {
+      const { done, value } = await reader.read();
 
-      await loadConversations();
+      if (done) break;
 
-      const newChat = {
-        question,
-        answer: response.data.answer,
-        sources: response.data.sources || [],
-        timestamp: new Date().toLocaleTimeString(),
-      };
+      const chunk = decoder.decode(value, { stream: true });
+      const lines = chunk.split("\n").filter(Boolean);
 
-      setChatHistory((previous) => [...previous, newChat]);
-      setQuestion("");
-    } catch (error) {
-      console.error(error);
-      alert(error.response?.data?.detail || "Failed to get answer.");
-    } finally {
-      setLoading(false);
+      for (const line of lines) {
+        const event = JSON.parse(line);
+
+        if (event.type === "metadata") {
+          finalConversationId = event.conversation_id;
+          setActiveConversationId(event.conversation_id);
+        }
+
+        if (event.type === "chunk") {
+          streamedAnswer += event.content;
+
+          setChatHistory((previous) => {
+            const updated = [...previous];
+            updated[updated.length - 1] = {
+              ...updated[updated.length - 1],
+              answer: streamedAnswer,
+            };
+            return updated;
+          });
+        }
+
+        if (event.type === "done") {
+          finalSources = event.sources || [];
+
+          setChatHistory((previous) => {
+            const updated = [...previous];
+            updated[updated.length - 1] = {
+              ...updated[updated.length - 1],
+              sources: finalSources,
+            };
+            return updated;
+          });
+
+          if (event.conversation_id) {
+            finalConversationId = event.conversation_id;
+            setActiveConversationId(event.conversation_id);
+          }
+        }
+
+        if (event.type === "error") {
+          alert(event.message || "Failed to get answer.");
+        }
+      }
     }
-  };
+
+    await loadConversations();
+
+    if (finalConversationId) {
+      await loadConversationChats(finalConversationId);
+    }
+  } catch (error) {
+    console.error(error);
+    alert("Failed to get streamed answer.");
+  } finally {
+    setLoading(false);
+  }
+};
 
   if (!user) {
     return (
