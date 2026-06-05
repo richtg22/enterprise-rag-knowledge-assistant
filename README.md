@@ -83,12 +83,13 @@ docker compose up --build
 * Conversational Memory
 * Knowledge Base Management
 * Enterprise Prompting
-* Multi-turn Question Answering
 * Dockerized frontend/backend
 * AI Generated Conversation Titles
 * Supabase Storage Integration
-* Cloud PDF Preview
 * Conversation Management
+* Hybrid Search
+* Multi-Conversation Support
+* Document Preview
 
 ## Example Conversation
 

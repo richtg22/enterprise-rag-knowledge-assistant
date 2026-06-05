@@ -15,12 +15,17 @@ from app.auth import (
     hash_password,
     verify_password,
 )
-from app.config import CHROMA_DB_PATH, UPLOAD_DIR
+from app.config import CHROMA_DB_PATH, UPLOAD_DIR, GROQ_API_KEY
 from app.database import Base, engine, get_db
 from app.document_loader import load_and_split_pdf
 from app.models import ChatHistory, User, Document, Conversation
-from app.rag import create_vector_store, get_qa_chain, delete_document_vectors
+from app.rag import ( 
+    create_vector_store, get_qa_chain, delete_document_vectors, hybrid_retrieve,
+)
+
 from app.storage import upload_file_to_supabase, delete_file_from_supabase, get_signed_url
+
+from langchain_groq import ChatGroq
 
 app = FastAPI(title="Enterprise RAG Knowledge Assistant")
 
@@ -472,7 +477,6 @@ def ask_question(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    qa_chain = get_qa_chain(current_user.id)
 
     conversation_id = request.conversation_id
 
@@ -546,41 +550,92 @@ Current Question:
 {request.question}
 """
 
-    response = qa_chain.invoke(
-        {"query": contextual_question}
+    retrieved_docs = hybrid_retrieve(
+        current_user.id,
+        contextual_question,
+        k=5,
     )
 
-    sources = []
-    seen = set()
-
-    for doc in response["source_documents"]:
-        source = os.path.basename(
-            doc.metadata.get("source", "")
+    if not retrieved_docs:
+        answer = "I could not find that information in the uploaded documents."
+        sources = []
+    else:
+        context = "\n\n".join(
+            [
+                f"Source: {os.path.basename(doc.metadata.get('source', ''))}, "
+                f"Page: {doc.metadata.get('page', 0) + 1}\n"
+                f"{doc.page_content}"
+                for doc in retrieved_docs
+            ]
         )
-        page = doc.metadata.get("page", 0) + 1
-        key = (source, page)
 
-        if key not in seen:
-            seen.add(key)
-            sources.append(
-                {
-                    "source": source,
-                    "page": page,
-                }
-            )
+        llm = ChatGroq(
+            groq_api_key=GROQ_API_KEY,
+            model_name="llama-3.1-8b-instant",
+            temperature=0,
+        )
+
+        prompt = f"""
+You are an enterprise knowledge assistant.
+
+Use ONLY the information provided in the context.
+
+When the user asks for:
+- a summary
+- what the document is about
+- what the document says
+
+provide a concise but complete summary of the retrieved content.
+
+Do not say "the context appears to be".
+
+Answer confidently using the retrieved information.
+
+If the answer is not contained in the context, respond:
+
+"I could not find that information in the uploaded documents."
+
+Context:
+{context}
+
+Question:
+{contextual_question}
+
+Answer:
+"""
+
+        response = llm.invoke(prompt)
+        answer = response.content
+
+        sources = []
+        seen = set()
+
+        for doc in retrieved_docs:
+            source = os.path.basename(doc.metadata.get("source", ""))
+            page = doc.metadata.get("page", 0) + 1
+            key = (source, page)
+
+            if key not in seen:
+                seen.add(key)
+                sources.append(
+                    {
+                        "source": source,
+                        "page": page,
+                    }
+                )
 
     new_chat = ChatHistory(
         user_id=current_user.id,
         conversation_id=conversation_id,
         question=request.question,
-        answer=response["result"],
+        answer=answer,
     )
 
     db.add(new_chat)
     db.commit()
 
     return {
-        "answer": response["result"],
+        "answer": answer,
         "sources": sources,
         "user": current_user.email,
         "conversation_id": conversation_id,

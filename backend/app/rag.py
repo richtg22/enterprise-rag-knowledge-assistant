@@ -8,6 +8,8 @@ from langchain_groq import ChatGroq
 
 from app.config import CHROMA_DB_PATH, GROQ_API_KEY
 
+from rank_bm25 import BM25Okapi
+from langchain.schema import Document
 
 _embedding_model = None
 
@@ -128,3 +130,65 @@ def delete_document_vectors(user_id: int, filename: str):
         collection.delete(ids=ids_to_delete)
 
     return len(ids_to_delete)
+
+def hybrid_retrieve(user_id: int, query: str, k: int = 5):
+    user_chroma_path = get_user_chroma_path(user_id)
+
+    vector_store = Chroma(
+        persist_directory=user_chroma_path,
+        embedding_function=get_embedding_model(),
+    )
+
+    vector_docs = vector_store.similarity_search(
+        query,
+        k=k,
+    )
+
+    all_data = vector_store.get()
+    documents = all_data.get("documents", [])
+    metadatas = all_data.get("metadatas", [])
+
+    if not documents:
+        return vector_docs
+
+    tokenized_docs = [
+        doc.lower().split()
+        for doc in documents
+    ]
+
+    bm25 = BM25Okapi(tokenized_docs)
+
+    tokenized_query = query.lower().split()
+
+    bm25_scores = bm25.get_scores(tokenized_query)
+
+    top_indexes = sorted(
+        range(len(bm25_scores)),
+        key=lambda i: bm25_scores[i],
+        reverse=True,
+    )[:k]
+
+    bm25_docs = [
+        Document(
+            page_content=documents[index],
+            metadata=metadatas[index] or {},
+        )
+        for index in top_indexes
+    ]
+
+    combined_docs = []
+    seen = set()
+
+    for doc in vector_docs + bm25_docs:
+        key = (
+            doc.page_content[:120],
+            doc.metadata.get("source", ""),
+            doc.metadata.get("page", ""),
+            doc.metadata.get("filename", ""),
+        )
+
+        if key not in seen:
+            seen.add(key)
+            combined_docs.append(doc)
+
+    return combined_docs[:k]
