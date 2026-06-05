@@ -308,7 +308,7 @@ Display Sources
 
 ---
 
-## Screenshots (will add soon)
+## Screenshots (Added to folder)
 
 ### Login Page
 
